@@ -1,0 +1,86 @@
+---
+- hosts: "{{ aws_host_ip }}"
+  remote_user: ubuntu
+  vars_files:
+    - external_vars.yml
+  vars:
+    env:
+      AUTH_USERNAME: '{{ auth_username }}'
+      AUTH_PASSWORD: '{{ auth_password }}'
+      SESSION_SECRET: '{{ session_secret }}'
+      AUTH_SECRET: '{{ auth_secret }}'
+      DATABASE_URL: '{{ database_url }}'
+  tasks:
+    - name: Update Ubuntu with all the lastest stuff
+      apt: update_cache=yes
+      become: yes
+      become_method: sudo
+
+    - name: Upgrade Ubuntu with all the lastest stuff
+      apt: upgrade=yes
+      become: yes
+      become_method: sudo
+
+    - name: Install Basic Unix-level Services
+      apt: name={{ item }} state=latest
+      become: yes
+      become_method: sudo
+      with_items:
+        - nginx
+        - python3
+        - python3-pip
+        - python3.4-venv
+        - git
+        - libtiff5-dev
+        - libjpeg8-dev
+        - zlib1g-dev
+        - libfreetype6-dev
+        - liblcms2-dev
+        - libwebp-dev
+        - tcl8.6-dev
+        - tk8.6-dev
+        - python-tk
+        - python-dev
+        - libpq-dev
+
+    - name: Clone the {{ app_name }} App to the Home Directory
+      git: clone=yes repo={{ git_repo_url }} dest=/home/ubuntu/Portfolio-Site
+
+    - name: Create a virtual environment in the {{ app_name }} app repo
+      command: python3 -m venv {{ environment_location }}
+
+    - name: Install the packages specified in requirements.pip in the Python 3 environment
+      pip: virtualenv=~/{{ environment_location }} requirements=~/{{ app_folder }}/requirements.txt
+
+    # - name: Initialize Database
+    #   command: initialize_db {{ production_file_path }}
+    #     virtualenv=~/{{ environment_location }}
+    #   environment: "{{ env }}"
+
+    - name: Register the old default file
+      stat: path=/etc/nginx/sites-available/default.old
+      register: default_stat
+
+    - name: Rename old default file if a copy doesn't already exist
+      command: mv /etc/nginx/sites-available/default /etc/nginx/sites-available/default.old
+      when: default_stat.stat.exists
+
+    - name: Create a new default file for nginx
+      template: src=templates/nginx.jinja2 dest=/etc/nginx/nginx.conf
+      become: yes
+      become_method: sudo
+
+    - name: Create portfolio-app.conf
+      template: src=templates/portfolio-app.jinja2 dest=/etc/nginx/portfolio-app.conf
+      become: yes
+      become_method: sudo
+
+    - name: Restart nginx service
+      service: name=nginx state=restarted
+      become: yes
+      become_method: sudo
+
+    # - name: Pserve the App
+    #   command: pserve {{ production_file_path }}
+    #     virtualenv={{ environment_location }}
+    #   environment: "{{ env }}"
